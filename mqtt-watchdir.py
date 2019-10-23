@@ -85,7 +85,7 @@ mf = None
 if MQTTFILTER is not None:
     try:
         mf = imp.load_source('mfilter', MQTTFILTER)
-    except(Exception, e):
+    except Exception as e:
         sys.exit("Can't import filter from file %s: %s" % (MQTTFILTER, e))
 
 clientid = 'mqtt-watchdir-%s' % os.getpid()
@@ -157,7 +157,7 @@ class MyHandler(PatternMatchingEventHandler):
                 payload = f.read()
                 f.close()
                 payload = payload.rstrip()
-            except(Exception, e):
+            except Exception as e:
                 print("Can't open file %s: %s" % (path, e))
                 return
 
@@ -173,7 +173,7 @@ class MyHandler(PatternMatchingEventHandler):
                     return
                 if new_payload is not None:
                     payload = new_payload
-            except(Exception, e):
+            except Exception as e:
                 print("mfilter: %s" % (e))
 
         mqtt.publish(topic, payload, qos=MQTTQOS, retain=MQTTRETAIN)

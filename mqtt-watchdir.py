@@ -66,7 +66,7 @@ if MQTTFIXEDTOPIC == '':
     MQTTFIXEDTOPIC = None
 
 if MQTTFIXEDTOPIC:
-    print 'Publishing ALL messages to the topic: %s' % MQTTFIXEDTOPIC
+    print('Publishing ALL messages to the topic: %s' % MQTTFIXEDTOPIC)
 
 ignore_patterns = [ '*.swp', '*.o', '*.pyc' ]
 
@@ -85,7 +85,7 @@ mf = None
 if MQTTFILTER is not None:
     try:
         mf = imp.load_source('mfilter', MQTTFILTER)
-    except Exception, e:
+    except(Exception, e):
         sys.exit("Can't import filter from file %s: %s" % (MQTTFILTER, e))
 
 clientid = 'mqtt-watchdir-%s' % os.getpid()
@@ -98,7 +98,7 @@ def on_publish(mosq, userdata, mid):
     # print("mid: "+str(mid))
 
 def on_disconnect(mosq, userdata, rc):
-    print "disconnected"
+    print("disconnected")
     time.sleep(5)
 
 def signal_handler(signal, frame):
@@ -147,7 +147,7 @@ class MyHandler(PatternMatchingEventHandler):
                 topic = filename
 
         if WATCHDEBUG:
-            print "%s %s. Topic: %s" % (op, filename, topic)
+            print("%s %s. Topic: %s" % (op, filename, topic))
 
         if op == 'DEL':
             payload = None
@@ -157,8 +157,8 @@ class MyHandler(PatternMatchingEventHandler):
                 payload = f.read()
                 f.close()
                 payload = payload.rstrip()
-            except Exception, e:
-                print "Can't open file %s: %s" % (path, e)
+            except(Exception, e):
+                print("Can't open file %s: %s" % (path, e))
                 return
 
         # If we've loaded a filter, run data through the filter to obtain
@@ -169,12 +169,12 @@ class MyHandler(PatternMatchingEventHandler):
                 publish, new_payload = mf.mfilter(path, topic, payload)
                 if publish is False:
                     if WATCHDEBUG:
-                        print "NOT publishing %s" % path
+                        print("NOT publishing %s" % path)
                     return
                 if new_payload is not None:
                     payload = new_payload
-            except Exception, e:
-                print "mfilter: %s" % (e)
+            except(Exception, e):
+                print("mfilter: %s" % (e))
 
         mqtt.publish(topic, payload, qos=MQTTQOS, retain=MQTTRETAIN)
 

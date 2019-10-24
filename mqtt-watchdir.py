@@ -40,7 +40,7 @@ from watchdog.observers import Observer
 import platform
 import importlib.util
 
-MQTTHOST        = os.getenv('MQTTHOST', 'localhost')
+MQTTHOST        = os.getenv('MQTTHOST', '192.168.40.41')
 MQTTPORT        = int(os.getenv('MQTTPORT', 1883))
 MQTTUSERNAME    = os.getenv('MQTTUSERNAME', None)
 MQTTPASSWORD    = os.getenv('MQTTPASSWORD', None)
@@ -51,6 +51,7 @@ MQTTRETAIN      = int(os.getenv('MQTTRETAIN', 0))
 # May be None in which case neither prefix no separating slash are prepended
 MQTTPREFIX      = os.getenv('MQTTPREFIX', 'watch')
 MQTTFILTER      = os.getenv('MQTTFILTER', None)
+MQTTINCLUDE     = os.getenv('MQTTINCLUDE', '*').split(",")
 
 # Publish all messages to a fixed topic. E.g. if the file contents already/also 
 # contains the name of the file or in certain situations with retained messages.
@@ -123,7 +124,6 @@ class MyHandler(PatternMatchingEventHandler):
     """
 
     def catch_all(self, event, op):
-
         if event.is_directory:
             return
 
@@ -206,7 +206,7 @@ def main():
     while 1:
     
         observer = Observer()
-        event_handler = MyHandler( ignore_patterns=ignore_patterns )
+        event_handler = MyHandler( patterns=MQTTINCLUDE, ignore_patterns=ignore_patterns )
         observer.schedule(event_handler, DIR, recursive=True)
         observer.start()
         try:

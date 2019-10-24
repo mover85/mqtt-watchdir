@@ -1,220 +1,117 @@
-#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Author: Douglas Creager <dcreager@dcreager.net>
+# This file is placed into the public domain.
 
-# Copyright (c) 2013 Jan-Piet Mens <jpmens()gmail.com>
-# All rights reserved.
+# Calculates the current version number.  If possible, this is the
+# output of “git describe”, modified to conform to the versioning
+# scheme that setuptools uses.  If “git describe” returns an error
+# (most likely because we're in an unpacked copy of a release tarball,
+# rather than in a git working copy), then we fall back on reading the
+# contents of the RELEASE-VERSION file.
 #
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
+# To use this script, simply import it your setup.py file, and use the
+# results of get_git_version() as your package version:
 #
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-# 2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of mosquitto nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
+# from version import *
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
+# setup(
+#     version=get_git_version(),
+#     .
+#     .
+#     .
+# )
+#
+#
+# This will automatically update the RELEASE-VERSION file, if
+# necessary.  Note that the RELEASE-VERSION file should *not* be
+# checked into git; please add it to your top-level .gitignore file.
+#
+# You'll probably want to distribute the RELEASE-VERSION file in your
+# sdist tarballs; to do this, just create a MANIFEST.in file that
+# contains the following line:
+#
+#   include RELEASE-VERSION
 
-__author__ = "Jan-Piet Mens"
-__copyright__ = "Copyright (C) 2013-2015 by Jan-Piet Mens"
+__all__ = ("get_git_version")
 
-import os, sys
-import signal
-import time
-import paho.mqtt.client as paho
-# https://github.com/gorakhargosh/watchdog
-from watchdog.events import PatternMatchingEventHandler
-from watchdog.observers import Observer
-import platform
-import importlib.util
+from subprocess import Popen, PIPE
 
-MQTTHOST        = os.getenv('MQTTHOST', 'localhost')
-MQTTPORT        = int(os.getenv('MQTTPORT', 1883))
-MQTTUSERNAME    = os.getenv('MQTTUSERNAME', None)
-MQTTPASSWORD    = os.getenv('MQTTPASSWORD', None)
-MQTTWATCHDIR    = os.getenv('MQTTWATCHDIR', '.')
-MQTTQOS         = int(os.getenv('MQTTQOS', 0))
-MQTTRETAIN      = int(os.getenv('MQTTRETAIN', 0))
 
-# May be None in which case neither prefix no separating slash are prepended
-MQTTPREFIX      = os.getenv('MQTTPREFIX', 'watch')
-MQTTFILTER      = os.getenv('MQTTFILTER', None)
-
-# Publish all messages to a fixed topic. E.g. if the file contents already/also 
-# contains the name of the file or in certain situations with retained messages.
-# Overrules and ignores the MQTTPREFIX setting.
-MQTTFIXEDTOPIC  = os.getenv('MQTTFIXEDTOPIC', None)
-
-WATCHDEBUG      = os.getenv('WATCHDEBUG', 0)
-
-if MQTTPREFIX == '':
-    MQTTPREFIX = None
-
-if MQTTFIXEDTOPIC == '':
-    MQTTFIXEDTOPIC = None
-
-if MQTTFIXEDTOPIC:
-    print('Publishing ALL messages to the topic: %s' % MQTTFIXEDTOPIC)
-
-ignore_patterns = [ '*.swp', '*.o', '*.pyc' ]
-
-# Publish with retain (True or False)
-if MQTTRETAIN == 1:
-    MQTTRETAIN=True
-else:
-    MQTTRETAIN=False
-
-# Ensure absolute path (incl. symlink expansion)
-DIR = os.path.abspath(os.path.expanduser(MQTTWATCHDIR))
-
-OS = platform.system()
-
-def module_from_file(module_name, file_path):
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-mf = None
-if MQTTFILTER is not None:
+def call_git_describe(abbrev):
     try:
-        mf = module_from_file('mfilter', MQTTFILTER)
-    except Exception as e:
-        sys.exit("Can't import filter from file %s: %s" % (MQTTFILTER, e))
+        p = Popen(['git', 'describe', '--abbrev=%d' % abbrev],
+                  stdout=PIPE, stderr=PIPE)
+        p.stderr.close()
+        line = p.stdout.readlines()[0]
+        return str(line.strip())
 
-clientid = 'mqtt-watchdir-%s' % os.getpid()
-mqtt = paho.Client(clientid, clean_session=True)
-if MQTTUSERNAME is not None or MQTTPASSWORD is not None:
-    mqtt.username_pw_set(MQTTUSERNAME, MQTTPASSWORD)
+    except:
+        return None
 
-def on_publish(mosq, userdata, mid):
-    pass
-    # print("mid: "+str(mid))
 
-def on_disconnect(mosq, userdata, rc):
-    print("disconnected")
-    time.sleep(5)
+def is_dirty():
+    try:
+        p = Popen(["git", "diff-index", "--name-only", "HEAD"],
+                  stdout=PIPE, stderr=PIPE)
+        p.stderr.close()
+        lines = p.stdout.readlines()
+        return len(lines) > 0
+    except:
+        return False
 
-def signal_handler(signal, frame):
-    """ Bail out at the top level """
 
-    mqtt.loop_stop()
-    mqtt.disconnect()
+def read_release_version():
+    try:
+        f = open("RELEASE-VERSION", "r")
 
-    sys.exit(0)
-
-class MyHandler(PatternMatchingEventHandler):
-    """
-    React to changes in files, handling create, update, unlink
-    explicitly. Ignore directories. Warning: does not handle move
-    operations (i.e. `mv f1 f2' isn't handled).
-    """
-
-    def catch_all(self, event, op):
-
-        if event.is_directory:
-            return
-
-        path = event.src_path
-
-        if OS == 'Linux' and op != 'DEL':
-
-            try:
-                # On Linux, a new file is NEW and MOD. Ensure we publish once only
-                ctime = os.path.getctime(path)
-                mtime = os.path.getmtime(path)
-
-                if op == 'NEW' and mtime == ctime:
-                        return
-            except:
-                pass
-
-        # Create relative path name and append to topic prefix
-        filename = path.replace(DIR + '/', '')
-
-        if MQTTFIXEDTOPIC is not None:
-            topic = MQTTFIXEDTOPIC
-        else:
-            if MQTTPREFIX is not None:
-                topic = '%s/%s' % (MQTTPREFIX, filename)
-            else:
-                topic = filename
-
-        if WATCHDEBUG:
-            print("%s %s. Topic: %s" % (op, filename, topic))
-
-        if op == 'DEL':
-            payload = None
-        else:
-            try:
-                f = open(path)
-                payload = f.read()
-                f.close()
-                payload = payload.rstrip()
-            except Exception as e:
-                print("Can't open file %s: %s" % (path, e))
-                return
-
-        # If we've loaded a filter, run data through the filter to obtain
-        # a (possibly) modified payload
-
-        if mf is not None:
-            try:
-                publish, new_payload = mf.mfilter(path, topic, payload)
-                if publish is False:
-                    if WATCHDEBUG:
-                        print("NOT publishing %s" % path)
-                    return
-                if new_payload is not None:
-                    payload = new_payload
-            except Exception as e:
-                print("mfilter: %s" % (e))
-
-        mqtt.publish(topic, payload, qos=MQTTQOS, retain=MQTTRETAIN)
-
-    def on_created(self, event):
-        self.catch_all(event, 'NEW')
-
-    def on_modified(self, event):
-        self.catch_all(event, 'MOD')
-
-    def on_deleted(self, event):
-        self.catch_all(event, 'DEL')
-
-def main():
-
-    mqtt.on_disconnect = on_disconnect
-    mqtt.on_publish = on_publish
-
-    mqtt.connect(MQTTHOST, MQTTPORT)
-
-    mqtt.loop_start()
-
-    signal.signal(signal.SIGINT, signal_handler)
-    while 1:
-    
-        observer = Observer()
-        event_handler = MyHandler( ignore_patterns=ignore_patterns )
-        observer.schedule(event_handler, DIR, recursive=True)
-        observer.start()
         try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            observer.stop()
-        observer.join()
+            version = f.readlines()[0]
+            return version.strip()
 
-if __name__ == '__main__':
-    main()
+        finally:
+            f.close()
+
+    except:
+        return None
+
+
+def write_release_version(version):
+    f = open("RELEASE-VERSION", "w")
+    f.write("%s\n" % version)
+    f.close()
+
+def get_git_version(abbrev=7):
+    # Read in the version that's currently in RELEASE-VERSION.
+
+    release_version = read_release_version()
+
+    # First try to get the current version using “git describe”.
+
+    version = call_git_describe(abbrev)
+    if version is not None and is_dirty():  # JPM
+        version += "-dirty"
+
+    # If that doesn't work, fall back on the value that's in
+    # RELEASE-VERSION.
+
+    if version is None:
+        version = release_version
+
+    # If we still don't have anything, that's an error.
+
+    if version is None:
+        raise ValueError("Cannot find the version number!")
+
+    # If the current version is different from what's in the
+    # RELEASE-VERSION file, update the file to be current.
+
+    if version != release_version:
+        write_release_version(version)
+
+    # Finally, return the current version.
+
+    return version
+
+
+if __name__ == "__main__":
+    print(get_git_version())

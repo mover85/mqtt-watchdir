@@ -37,6 +37,7 @@ import paho.mqtt.client as paho
 # https://github.com/gorakhargosh/watchdog
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
+from subprocess import Popen, PIPE
 import platform
 import importlib.util
 
@@ -123,6 +124,11 @@ class MyHandler(PatternMatchingEventHandler):
     operations (i.e. `mv f1 f2' isn't handled).
     """
 
+    def tail(f, n, offset=0):
+        proc = subprocess.Popen(['tail', '-n', n + offset, f], stdout=subprocess.PIPE)
+        lines = proc.stdout.readlines()
+        return lines[:, -offset]
+
     def catch_all(self, event, op):
         if event.is_directory:
             return
@@ -159,9 +165,7 @@ class MyHandler(PatternMatchingEventHandler):
             payload = None
         else:
             try:
-                f = open(path)
-                payload = f.read()
-                f.close()
+                payload = tail(path, 1)
                 payload = payload.rstrip()
             except Exception as e:
                 print("Can't open file %s: %s" % (path, e))

@@ -38,7 +38,7 @@ import paho.mqtt.client as paho
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
 import platform
-import imp
+import importlib.util
 
 MQTTHOST        = os.getenv('MQTTHOST', 'localhost')
 MQTTPORT        = int(os.getenv('MQTTPORT', 1883))
@@ -81,10 +81,16 @@ DIR = os.path.abspath(os.path.expanduser(MQTTWATCHDIR))
 
 OS = platform.system()
 
+def module_from_file(module_name, file_path):
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 mf = None
 if MQTTFILTER is not None:
     try:
-        mf = imp.load_source('mfilter', MQTTFILTER)
+        mf = module_from_file('mfilter', MQTTFILTER)
     except Exception as e:
         sys.exit("Can't import filter from file %s: %s" % (MQTTFILTER, e))
 

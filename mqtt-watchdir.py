@@ -27,39 +27,41 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-__author__ = "Jan-Piet Mens"
-__copyright__ = "Copyright (C) 2013-2015 by Jan-Piet Mens"
-
-import os, sys
+import os
+import sys
 import signal
 import time
 import paho.mqtt.client as paho
 # https://github.com/gorakhargosh/watchdog
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
-from subprocess import Popen, PIPE
+import subprocess
 import platform
 import importlib.util
 
-MQTTHOST        = os.getenv('MQTTHOST', '192.168.40.41')
-MQTTPORT        = int(os.getenv('MQTTPORT', 1883))
-MQTTUSERNAME    = os.getenv('MQTTUSERNAME', None)
-MQTTPASSWORD    = os.getenv('MQTTPASSWORD', None)
-MQTTWATCHDIR    = os.getenv('MQTTWATCHDIR', '.')
-MQTTQOS         = int(os.getenv('MQTTQOS', 0))
-MQTTRETAIN      = int(os.getenv('MQTTRETAIN', 0))
+__author__ = "Jan-Piet Mens"
+__copyright__ = "Copyright (C) 2013-2015 by Jan-Piet Mens"
+
+MQTTHOST = os.getenv('MQTTHOST', 'localhost')
+MQTTPORT = int(os.getenv('MQTTPORT', 1883))
+MQTTUSERNAME = os.getenv('MQTTUSERNAME', None)
+MQTTPASSWORD = os.getenv('MQTTPASSWORD', None)
+MQTTWATCHDIR = os.getenv('MQTTWATCHDIR', '.')
+MQTTQOS = int(os.getenv('MQTTQOS', 0))
+MQTTRETAIN = int(os.getenv('MQTTRETAIN', 0))
 
 # May be None in which case neither prefix no separating slash are prepended
-MQTTPREFIX      = os.getenv('MQTTPREFIX', 'watch')
-MQTTFILTER      = os.getenv('MQTTFILTER', None)
-MQTTINCLUDE     = os.getenv('MQTTINCLUDE', '*').split(",")
+MQTTPREFIX = os.getenv('MQTTPREFIX', 'watch')
+MQTTFILTER = os.getenv('MQTTFILTER', None)
+MQTTINCLUDE = os.getenv('MQTTINCLUDE', '*').split(",")
+MQTTEVENTS = os.getenv('MQTTEVENTS', 'NEW,MOD,DEL').split(",")
 
-# Publish all messages to a fixed topic. E.g. if the file contents already/also 
-# contains the name of the file or in certain situations with retained messages.
-# Overrules and ignores the MQTTPREFIX setting.
-MQTTFIXEDTOPIC  = os.getenv('MQTTFIXEDTOPIC', None)
+# Publish all messages to a fixed topic. E.g. if the file contents already/also
+# contains the name of the file or in certain situations
+# with retained messages. Overrules and ignores the MQTTPREFIX setting.
+MQTTFIXEDTOPIC = os.getenv('MQTTFIXEDTOPIC', None)
 
-WATCHDEBUG      = os.getenv('WATCHDEBUG', 0)
+WATCHDEBUG = os.getenv('WATCHDEBUG', 0)
 
 if MQTTPREFIX == '':
     MQTTPREFIX = None
@@ -70,18 +72,19 @@ if MQTTFIXEDTOPIC == '':
 if MQTTFIXEDTOPIC:
     print('Publishing ALL messages to the topic: %s' % MQTTFIXEDTOPIC)
 
-ignore_patterns = [ '*.swp', '*.o', '*.pyc' ]
+ignore_patterns = ['*.swp', '*.o', '*.pyc']
 
 # Publish with retain (True or False)
 if MQTTRETAIN == 1:
-    MQTTRETAIN=True
+    MQTTRETAIN = True
 else:
-    MQTTRETAIN=False
+    MQTTRETAIN = False
 
 # Ensure absolute path (incl. symlink expansion)
 DIR = os.path.abspath(os.path.expanduser(MQTTWATCHDIR))
 
 OS = platform.system()
+
 
 def module_from_file(module_name, file_path):
     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -101,13 +104,16 @@ mqtt = paho.Client(clientid, clean_session=True)
 if MQTTUSERNAME is not None or MQTTPASSWORD is not None:
     mqtt.username_pw_set(MQTTUSERNAME, MQTTPASSWORD)
 
+
 def on_publish(mosq, userdata, mid):
     pass
     # print("mid: "+str(mid))
 
+
 def on_disconnect(mosq, userdata, rc):
     print("disconnected")
     time.sleep(5)
+
 
 def signal_handler(signal, frame):
     """ Bail out at the top level """
@@ -117,17 +123,19 @@ def signal_handler(signal, frame):
 
     sys.exit(0)
 
+
+def tail(f):
+    proc = subprocess.Popen(['tail', '-n 1', f], stdout=subprocess.PIPE)
+    line = proc.stdout.readline()
+    return line.decode()
+
+
 class MyHandler(PatternMatchingEventHandler):
     """
     React to changes in files, handling create, update, unlink
     explicitly. Ignore directories. Warning: does not handle move
     operations (i.e. `mv f1 f2' isn't handled).
     """
-
-    def tail(f, n, offset=0):
-        proc = subprocess.Popen(['tail', '-n', n + offset, f], stdout=subprocess.PIPE)
-        lines = proc.stdout.readlines()
-        return lines[:, -offset]
 
     def catch_all(self, event, op):
         if event.is_directory:
@@ -138,7 +146,7 @@ class MyHandler(PatternMatchingEventHandler):
         if OS == 'Linux' and op != 'DEL':
 
             try:
-                # On Linux, a new file is NEW and MOD. Ensure we publish once only
+                # On Linux, ensure we publish once only
                 ctime = os.path.getctime(path)
                 mtime = os.path.getmtime(path)
 
@@ -147,28 +155,25 @@ class MyHandler(PatternMatchingEventHandler):
             except:
                 pass
 
-        # Create relative path name and append to topic prefix
-        filename = path.replace(DIR + '/', '')
-
         if MQTTFIXEDTOPIC is not None:
             topic = MQTTFIXEDTOPIC
         else:
+            # Create relative path name and append to topic prefix
+            filename = path.replace(DIR + '/', '')
+
             if MQTTPREFIX is not None:
                 topic = '%s/%s' % (MQTTPREFIX, filename)
             else:
                 topic = filename
 
-        if WATCHDEBUG:
-            print("%s %s. Topic: %s" % (op, filename, topic))
-
         if op == 'DEL':
             payload = None
         else:
             try:
-                payload = tail(path, 1)
+                payload = tail(path)
                 payload = payload.rstrip()
             except Exception as e:
-                print("Can't open file %s: %s" % (path, e))
+                print("Can't tail file %s: %s" % (path, e))
                 return
 
         # If we've loaded a filter, run data through the filter to obtain
@@ -176,26 +181,41 @@ class MyHandler(PatternMatchingEventHandler):
 
         if mf is not None:
             try:
-                publish, new_payload = mf.mfilter(path, topic, payload)
-                if publish is False:
+                pub, new_p, new_t = mf.mfilter(path, topic, payload, op)
+                if pub is False:
                     if WATCHDEBUG:
-                        print("NOT publishing %s" % path)
+                        print("NOT publishing message")
                     return
-                if new_payload is not None:
-                    payload = new_payload
+                if new_p is not None:
+                    payload = new_p
+                if new_t is not None:
+                    topic = new_t
             except Exception as e:
                 print("mfilter: %s" % (e))
+
+        if WATCHDEBUG:
+            print("%s Topic: %s" % (op, topic))
 
         mqtt.publish(topic, payload, qos=MQTTQOS, retain=MQTTRETAIN)
 
     def on_created(self, event):
+        if 'NEW' not in MQTTEVENTS:
+            return
+
         self.catch_all(event, 'NEW')
 
     def on_modified(self, event):
+        if 'MOD' not in MQTTEVENTS:
+            return
+
         self.catch_all(event, 'MOD')
 
     def on_deleted(self, event):
+        if 'DEL' not in MQTTEVENTS:
+            return
+
         self.catch_all(event, 'DEL')
+
 
 def main():
 
@@ -208,9 +228,9 @@ def main():
 
     signal.signal(signal.SIGINT, signal_handler)
     while 1:
-    
         observer = Observer()
-        event_handler = MyHandler( patterns=MQTTINCLUDE, ignore_patterns=ignore_patterns )
+        event_handler = MyHandler(patterns=MQTTINCLUDE,
+                                  ignore_patterns=ignore_patterns)
         observer.schedule(event_handler, DIR, recursive=True)
         observer.start()
         try:

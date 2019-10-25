@@ -125,7 +125,7 @@ def signal_handler(signal, frame):
 
 
 def tail(f):
-    proc = subprocess.Popen(['tail', '-n 1', f], stdout=subprocess.PIPE)
+    proc = subprocess.Popen(['tail', '-n1', f], stdout=subprocess.PIPE)
     line = proc.stdout.readline()
     return line.decode()
 
